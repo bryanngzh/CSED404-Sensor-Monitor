@@ -7,6 +7,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.AdapterView
@@ -68,7 +70,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun setupSpinner() {
         // Binding list of activities to spinner
-        val activities = arrayOf("Walking", "Running", "Standing", "Sitting", "Upstairs", "Downstairs", "Other")
+        val activities = arrayOf("Other", "Walking", "Running", "Standing", "Sitting", "Upstairs", "Downstairs")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, activities)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         activitySpinner.adapter = adapter
@@ -111,6 +113,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun stopTimer() {
         timer?.cancel()
         timer = null
+        timerTextView.text = String.format("%02d:%02d:%02d", 0, 0, 0)
     }
 
     private fun startRecording() {
@@ -118,19 +121,45 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         startStopButton.text = getString(R.string.stop_text)
         startTime = System.currentTimeMillis()
 
-        // Create files
-        val directory = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
-        linearAccelerometerFile = File(directory, "linear_accelerometer.csv")
-        gravityFile = File(directory, "gravity.csv")
-        gyroscopeFile = File(directory, "gyroscope.csv")
+        // Create activity-specific directory
+        val directory = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), selectedActivity.toString())
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
 
-        // Register Listeners
-        sensorManager.registerListener(this, linearAccelerometer, SensorManager.SENSOR_DELAY_UI)
-        sensorManager.registerListener(this, gravity, SensorManager.SENSOR_DELAY_UI)
-        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_UI)
+        // Create files in the respective activity folder
+        linearAccelerometerFile = File(directory, "linear.csv")
+        gravityFile = File(directory, "gravity.csv")
+        gyroscopeFile = File(directory, "gyro.csv")
+
+        val samplingPeriodUs = 10000 // 100 Hz sampling rate
+
+        // Register Listeners - Delay listeners by 5 seconds
+        Handler(Looper.getMainLooper()).postDelayed({
+            sensorManager.registerListener(this, linearAccelerometer, samplingPeriodUs)
+            sensorManager.registerListener(this, gravity, samplingPeriodUs)
+            sensorManager.registerListener(this, gyroscope, samplingPeriodUs)
+        }, 5000)
 
         // Start Timer
         startTimer()
+    }
+
+    private fun removeLastLines(file: File) {
+        if (!file.exists()) return
+        val linesToRemove = 10000
+        try {
+            val lines = file.readLines()
+
+            if (lines.size <= linesToRemove) {
+                file.writeText("")
+            } else {
+                val remainingLines = lines.dropLast(linesToRemove)
+                file.writeText(remainingLines.joinToString("\n"))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun stopRecording() {
@@ -142,12 +171,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         // Stop Timer
         stopTimer()
+
+        // Early Stop - remove last 10 seconds of data
+        removeLastLines(linearAccelerometerFile)
+        removeLastLines(gravityFile)
+        removeLastLines(gyroscopeFile)
     }
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!isRecording) return
 
-        val timestamp = event.timestamp
+        val timestamp = event.timestamp / 1000 // nano -> micro_sec
         val values = event.values
 
         val file: File = when (event.sensor.type) {
@@ -159,11 +193,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         val data = String.format(
             "%d,%d,%.9e,%.9e,%.9e\n",
-            selectedActivity,
-            timestamp,
-            values[0],
-            values[1],
-            values[2]
+            selectedActivity, // class: int
+            timestamp, // timestamp: ms
+            values[0], // x: m/s^2 || rad/s
+            values[1], // y: m/s^2 || rad/s
+            values[2]  // z: m/s^2 || rad/s
         )
 
         try {
