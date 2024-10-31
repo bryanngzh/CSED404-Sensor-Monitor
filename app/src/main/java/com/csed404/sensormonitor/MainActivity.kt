@@ -134,12 +134,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         val samplingPeriodUs = 10000 // 100 Hz sampling rate
 
-        // Register Listeners - Delay listeners by 5 seconds
-        Handler(Looper.getMainLooper()).postDelayed({
-            sensorManager.registerListener(this, linearAccelerometer, samplingPeriodUs)
-            sensorManager.registerListener(this, gravity, samplingPeriodUs)
-            sensorManager.registerListener(this, gyroscope, samplingPeriodUs)
-        }, 5000)
+        // Register Listeners
+        sensorManager.registerListener(this, linearAccelerometer, samplingPeriodUs)
+        sensorManager.registerListener(this, gravity, samplingPeriodUs)
+        sensorManager.registerListener(this, gyroscope, samplingPeriodUs)
 
         // Start Timer
         startTimer()
@@ -147,7 +145,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun removeLastLines(file: File) {
         if (!file.exists()) return
-        val linesToRemove = 10000
+        val linesToRemove = 500
         try {
             val lines = file.readLines()
 
@@ -172,7 +170,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         // Stop Timer
         stopTimer()
 
-        // Early Stop - remove last 10 seconds of data
+        // Early Stop - remove last 5 seconds of data
         removeLastLines(linearAccelerometerFile)
         removeLastLines(gravityFile)
         removeLastLines(gyroscopeFile)
@@ -180,6 +178,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!isRecording) return
+
+        // Late start by 5 seconds
+        val elapsedTime = System.currentTimeMillis() - startTime
+        if (elapsedTime < 5000) return
 
         val timestamp = event.timestamp / 1000 // nano -> micro_sec
         val values = event.values
